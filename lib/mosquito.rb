@@ -11,7 +11,7 @@ stringio
 ).each { |lib| require lib }
 
 module Mosquito
-  VERSION = '0.1.3'
+  VERSION = '0.1.4'
   
   # For various methods that need to generate random text
   def self.garbage(amount) #:nodoc:

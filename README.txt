@@ -1,4 +1,4 @@
-=Mosquito, for Bug-Free Camping
+= Mosquito, for Bug-Free Camping
 
 A testing helper for those times when you go Camping.
 Apply on the face, neck, and any exposed areas such as your 
