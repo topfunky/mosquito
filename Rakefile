@@ -16,6 +16,8 @@ Hoe.new('Mosquito', Mosquito::VERSION) do |p|
   p.summary = "A Camping test library."
   p.changes = p.paragraphs_of('CHANGELOG', 0..1).join("\n\n")
   p.url = "http://mosquito.rubyforge.org"
+  p.remote_rdoc_dir = '' # Release to root on rubyforge
+  p.rsync_args << ' --exclude=statsvn/'
   p.rdoc_pattern = /README|CHANGELOG|mosquito/
   p.clean_globs = ['**.log', 'coverage', 'coverage.data', 'test/test.log', 'email.txt']
   p.extra_deps = ['activerecord', 'activesupport', 'camping']
