@@ -18,3 +18,5 @@ test/test_blog.rb
 test/test_helpers.rb
 test/test_mock_request.rb
 test/test_mock_upload.rb
+test/test_fixtures.rb
+
