@@ -37,6 +37,13 @@ class TestBare < Camping::FunctionalTest
     assert_no_match_body /Rubber\s+Bubblegum\s+Burt Reynolds\s+Hippopotamus/
   end
 
+  test "should ensure single leading slash" do
+    assert_equal '/foo', self.send(:ensure_one_leading_slash, "foo")
+    assert_equal '/foo', self.send(:ensure_one_leading_slash, "//////foo")
+    assert_equal '/foo/bar', self.send(:ensure_one_leading_slash, "//////foo/bar")
+    assert_equal '/', self.send(:ensure_one_leading_slash, nil)
+  end
+  
   test "should return error" do
     if Camping.respond_to?(:call)
       # Camping on Rack reraises the errors which are caught by Rack's exception displayer

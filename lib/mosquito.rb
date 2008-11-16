@@ -480,12 +480,9 @@ module Camping
       # Make the Camping app route our request
       @request['SCRIPT_NAME'] = '/' + @class_name_abbr.downcase
       
-      # A fork. Camping 2.0 needs PATH_INFO without the leading slash
-      @request['PATH_INFO'] = if Camping.respond_to?(:call)
-        relative_url
-      else
-        '/' + relative_url
-      end
+      # PATH_INFO is used for internal routing by Camping. We have to always pass
+      # the leading slash
+      @request['PATH_INFO'] = ensure_one_leading_slash(relative_url)
       
       # We need to munge this because the PATH_INFO has changed
       @request['REQUEST_URI'] = [@request.SCRIPT_NAME, @request.PATH_INFO].join('').squeeze('/')
@@ -591,6 +588,11 @@ module Camping
     end
     
     private
+      # Ensure that we have a URL with one leading slash
+      def ensure_one_leading_slash(url)
+        ['/', url.to_s].join.gsub(/^(\/+)/, '/')
+      end
+      
       def extract_redirection_url
         # We parse once more because Camping 2 sends a String (Rack does not want a URI) and 1.5 sends URI
         loc = URI.parse(@response.headers['Location'].to_s)
