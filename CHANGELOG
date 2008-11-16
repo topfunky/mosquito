@@ -1,4 +1,6 @@
-* Test with both Camping 2 and Camping 1.5
+== 0.1.4 - The glass slipper release
+
+* Compatibility with Camping 2.0 (development version) and Camping 1.5
 * Fix that newer Rails assert_select wants to know content_type
 * Final solution to the fixture problems. We now setup and teardown properly.
 * Fixed a bug that would occur when using an absolute URL (with scheme and host) 
