@@ -503,7 +503,7 @@ module Camping
       # Run the request. 
       @response = if app_module.respond_to?(:run) # Camping < 2.0
         app_module.run(*@request.to_camping_args)
-      else  # Camping 2.0
+      else # Camping 2.0
         app_module.call(@request.to_rack_request).pop # Serve a Rack::Response object
       end
         
@@ -577,8 +577,13 @@ module Camping
     
     # Checks that Camping sent us a cookie to attach a session
     def assert_session_started
-      assert_not_nil @cookies["camping_sid"], 
-        "The session ID cookie was empty although session should have started"
+      if Camping.respond_to?(:call) # Camping 2.0 prefers cookie sessions
+        assert_not_nil @cookies["camping_hash"], 
+          "The session hash cookie was empty although session should have started"
+      else
+        assert_not_nil @cookies["camping_sid"], 
+          "The session ID cookie was empty although session should have started"
+      end
     end
     
     # The reverse of +assert_session_started+
