@@ -1,6 +1,3 @@
-require 'rubygems'
-require 'camping'
-
 Camping.goes :ParsingArrays
 
 class ParsingArrays::Controllers::Klonk < ParsingArrays::Controllers::R('/')

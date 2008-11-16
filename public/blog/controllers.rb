@@ -152,6 +152,10 @@ module Blog::Controllers
   end
 
   class Restafarian < R('/rest')
+    def get
+      return 'Called get'
+    end
+    
     def delete
       return "Called delete"
     end

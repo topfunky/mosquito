@@ -1,4 +1,5 @@
 $: << 'lib'
+$:.reject! { |e| e.include? 'TextMate' }
 
 require 'rubygems'
 require 'hoe'
@@ -17,6 +18,8 @@ Hoe.new('Mosquito', Mosquito::VERSION) do |p|
   p.changes = p.paragraphs_of('CHANGELOG', 0..1).join("\n\n")
   p.url = "http://mosquito.rubyforge.org"
   p.remote_rdoc_dir = '' # Release to root on rubyforge
+  # We need that so that Hoe does not grab Camping's own distro tests
+  p.test_globs = ['test/test_*.rb']
   p.rsync_args << ' --exclude=statsvn/'
   p.rdoc_pattern = /README|CHANGELOG|mosquito/
   p.clean_globs = ['**.log', 'coverage', 'coverage.data', 'test/test.log', 'email.txt']
@@ -40,3 +43,22 @@ begin
   end
 rescue LoadError
 end
+
+require 'rake/testtask'
+
+
+multicamp_tasks = Dir.glob(File.dirname(__FILE__) + '/test/camping-dist/camping-*/lib').sort.map do | path |
+  distname = File.basename(File.dirname(path))
+  libs = path[(File.dirname(__FILE__) + '/').length..-1]
+  
+  desc "Run tests with #{distname}"
+  Rake::TestTask.new("test-with-#{distname}") do |t|
+    t.libs << "test" << libs
+    t.pattern = 'test/test_*.rb'
+    t.verbose = true
+  end
+  "test-with-#{distname}"
+end
+
+desc "Run with multiple Camping versions"
+task :multicamp => multicamp_tasks

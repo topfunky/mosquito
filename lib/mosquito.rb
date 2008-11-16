@@ -23,6 +23,9 @@ module Mosquito
     str.join
   end
 
+  # URL escape on both Camping versions
+  def self.esc(t); Camping.escape(t.to_s) rescue Rack::Utils.escape(t.to_s); end
+  
   # Will be raised if you try to test for something Camping does not support.
   # Kind of a safeguard in the deep ocean of metaified Ruby goodness.
   class SageAdvice < RuntimeError; end
@@ -36,60 +39,44 @@ module Mosquito
   end
 
   def self.unstash #:nodoc:
-    x, @stashed = @stashed, nil; x
+    (x, @stashed = @stashed, nil).shift
+  end
+  
+  module Dusty
+    ##
+    # From Jay Fields.
+    #
+    # Allows tests to be specified as a block.
+    #
+    #   test "should do this and that" do
+    #     ...
+    #   end
+
+    def test(name, &block)
+      test_name = :"test_#{name.gsub(' ','_')}"
+      raise ArgumentError, "#{test_name} is already defined" if self.instance_methods.include? test_name.to_s
+      define_method test_name, &block
+    end
   end
 end
 
-ActiveRecord::Base.establish_connection(:adapter => 'sqlite3', :database => ":memory:")
+returning(:adapter => 'sqlite3', :database => ":memory:") do | config |
+  ActiveRecord::Base.establish_connection config
+  ActiveRecord::Base.configurations['test'] = config.stringify_keys
+end
+
 ActiveRecord::Base.logger = Logger.new("test/test.log") rescue Logger.new("test.log")
 
 # This needs to be set relative to the file where the test comes from, NOT relative to the
 # mosquito itself
 Test::Unit::TestCase.fixture_path = "test/fixtures/"
 
-class Test::Unit::TestCase #:nodoc:
-  def create_fixtures(*table_names)
-    if block_given?
-      self.class.fixtures(*table_names) { |*anything| yield(*anything) }
-    else
-      self.class.fixtures(*table_names)
-    end
-  end
-  
-  def self.fixtures(*table_names)
-    if block_given?
-      Fixtures.create_fixtures(Test::Unit::TestCase.fixture_path, table_names) { yield }
-    else
-      Fixtures.create_fixtures(Test::Unit::TestCase.fixture_path, table_names)
-    end
-  end
-
-  ##
-  # From Jay Fields.
-  #
-  # Allows tests to be specified as a block.
-  #
-  #   test "should do this and that" do
-  #     ...
-  #   end
-  
-  def self.test(name, &block)
-    test_name = :"test_#{name.gsub(' ','_')}"
-    raise ArgumentError, "#{test_name} is already defined" if self.instance_methods.include? test_name.to_s
-    define_method test_name, &block
-  end
-
-  # Turn off transactional fixtures if you're working with MyISAM tables in MySQL
-  self.use_transactional_fixtures = true
-  # Instantiated fixtures are slow, but give you @david where you otherwise would need people(:david)
-  self.use_instantiated_fixtures  = false
-end
-
 # Mock request is used for composing the request body and headers
 class Mosquito::MockRequest
   # Should be a StringIO. However, you got some assignment methods that will
   # stuff it with encoded parameters for you
   attr_accessor :body
+  attr_reader :headers
   
   DEFAULT_HEADERS = {
     'SERVER_NAME' => 'test.host',
@@ -114,10 +101,11 @@ class Mosquito::MockRequest
     'HTTP_CONNECTION' => 'keep-alive',
     'REQUEST_METHOD' => 'GET',
   }
-
+  
+  
   def initialize
     @headers = DEFAULT_HEADERS.with_indifferent_access # :-)
-    @body = StringIO.new('hello Camping')
+    @body = StringIO.new('')
   end
   
   # Returns the hash of headers  
@@ -203,9 +191,27 @@ class Mosquito::MockRequest
      "msqto-" + Mosquito::garbage(16)
   end
   
+  # Return a hash that can be used as a Rack request
+  def to_rack_request
+    returning({}) do | inp |
+      inp.merge! @headers
+      inp.merge! 'rack.input' => @body, 
+        'rack.version' => [0,1], 
+        'rack.errors' => STDERR, 
+        'rack.url_scheme' => 'http',
+        'CONTENT_LENGTH' => @body.string.length.to_s # Rack throws an error when it does not proper clen
+    end
+  end
+  
+  # Return an array of Camping arguments
+  def to_camping_args
+    [@body, self]
+  end
+  
   private
+    
     # Quickly URL-escape something
-    def esc(t); Camping.escape(t.to_s);end
+    def esc(t); Mosquito.esc(t); end
   
     # Extracts an array of values from a deeply-nested hash
     def extract_values(hash_or_a)
@@ -243,7 +249,7 @@ class Mosquito::MockRequest
     def uploaded_file_segment(key, upload_io, boundary)
       <<-EOF
 --#{boundary}\r
-Content-Disposition: form-data; name="#{key}"; filename="#{Camping.escape(upload_io.original_filename)}"\r
+Content-Disposition: form-data; name="#{key}"; filename="#{Mosquito.esc(upload_io.original_filename)}"\r
 Content-Type: #{upload_io.content_type}\r
 Content-Length: #{upload_io.size}\r
 \r
@@ -365,11 +371,16 @@ module Mosquito::Proboscis #:nodoc:
 end
 
 module Camping
-
+  
+  # The basic Mosquito-wielding test case with some infrastructure
   class Test < Test::Unit::TestCase
-
-    def test_dummy; end #:nodoc
-
+    class << self; include Mosquito::Dusty; end
+    
+    def test_default; end #:nodoc
+    
+    # This is needed because Rails fixtures actually try to setup twice
+    def self.use_transactional_fixtures; false; end
+    
     # The reverse of the reverse of the reverse of assert(condition)
     def deny(condition, message='')
       assert !condition, message
@@ -408,11 +419,15 @@ module Camping
   class WebTest < Test
     
     # Gives you access to the instance variables assigned by the controller 
-    attr_reader :assigns
-    
-    def test_dummy; end #:nodoc
+    def assigns(key = nil)
+      @assigns ||= Camping::H.new
+      key ? @assigns[key] : @assigns
+    end
+        
+    def test_default; end #:nodoc
     
     def setup
+      super
       @class_name_abbr = self.class.name.gsub(/^Test/, '')
       @request = Mosquito::MockRequest.new
       @cookies, @response, @assigns = {}, {}, {}
@@ -424,29 +439,29 @@ module Camping
     end
 
     # Send a POST request to a URL. All requests except GET will allow
-    # setting verbatim URL-encoded parameters as the third argument instead
+    # setting verbatim request body as the third argument instead
     # of a hash.
     def post(url, post_vars={})
       send_request url, post_vars, 'POST'
     end
 
     # Send a DELETE request to a URL. All requests except GET will allow
-    # setting verbatim URL-encoded parameters as the third argument instead
+    # setting verbatim request body as the third argument instead
     # of a hash.
     def delete(url, vars={})
       send_request url, vars, 'DELETE'
     end
 
     # Send a PUT request to a URL. All requests except GET will allow
-    # setting verbatim URL-encoded parameters as the third argument instead
+    # setting verbatim request body as the third argument instead
     # of a hash.
     def put(url, vars={})
       send_request url, vars, 'PUT'
     end
 
-    # Send any request. We will try to guess what you meant - if there are uploads to be
+    # Send the request. We will try to guess what you meant - if there are uploads to be
     # processed it's not going to be a GET, that's for sure.
-    def send_request(url, post_vars, method)
+    def send_request(composite_url, post_vars, method)
       
       if method.to_s.downcase == "get"
         @request.query_string_params = post_vars
@@ -455,41 +470,59 @@ module Camping
       end
       
       # If there is some stuff in the URL to be used as a query string, why ignore it?
-      url, qs_from_url = url.split(/\?/)
-      
-      relativize_url!(url)
+      relative_url, qs_from_url = relativize_url(composite_url)
       
       @request.append_to_query_string(qs_from_url) if qs_from_url
       
       # We do allow the user to override that one
       @request['REQUEST_METHOD'] = method
       
+      # Make the Camping app route our request
       @request['SCRIPT_NAME'] = '/' + @class_name_abbr.downcase
-      @request['PATH_INFO'] = '/' + url
       
+      # A fork. Camping 2.0 needs PATH_INFO without the leading slash
+      @request['PATH_INFO'] = if Camping.respond_to?(:call)
+        relative_url
+      else
+        '/' + relative_url
+      end
+      
+      # We need to munge this because the PATH_INFO has changed
       @request['REQUEST_URI'] = [@request.SCRIPT_NAME, @request.PATH_INFO].join('').squeeze('/')
       unless @request['QUERY_STRING'].blank?
         @request['REQUEST_URI'] += ('?' + @request['QUERY_STRING']) 
       end
       
       if @cookies
-        @request['HTTP_COOKIE'] = @cookies.map {|k,v| "#{k}=#{Camping.escape(v)}" }.join('; ')
+        @request['HTTP_COOKIE'] = @cookies.map {|k,v| "#{k}=#{Mosquito.esc(v)}" }.join('; ')
       end
       
-      # Inject the proboscis if we haven't already done so
-      pr = Mosquito::Proboscis
-      eval("#{@class_name_abbr}.send(:include, pr) unless #{@class_name_abbr}.ancestors.include?(pr)")
+      # Get the Camping app
+      app_module = Kernel.const_get(@class_name_abbr)
       
-      # Run the request
-      @response = eval("#{@class_name_abbr}.run @request.body, @request")
+      # Inject the proboscis if we haven't already done so
+      app_module.send(:include, Mosquito::Proboscis) unless app_module.ancestors.include?(Mosquito::Proboscis)
+      
+      # Run the request. 
+      @response = if app_module.respond_to?(:run) # Camping < 2.0
+        app_module.run(*@request.to_camping_args)
+      else  # Camping 2.0
+        app_module.call(@request.to_rack_request).pop # Serve a Rack::Response object
+      end
+        
+      # Add content_type accessor for Rails assert_select
+      eval("class << @response; def content_type; @headers['Content-Type']; end; end")
+      
+      # Downgrade the disguised Mab into a string
+      @response.body = @response.body.to_s
       @assigns = Mosquito::unstash
       
       # We need to restore the cookies separately so that the app
       # restores our session on the next request. We retrieve cookies and
       # the session in their assigned form instead of parsing the headers and
       # doing a deserialization cycle 
-      @cookies = @assigns[:cookies] || H[{}]
-      @state = @assigns[:state] || H[{}]
+      @cookies = @assigns.cookies || H[{}]
+      @state = @assigns.state || H[{}]
       
       if @response.headers['X-Sendfile']
         @response.body = File.read(@response.headers['X-Sendfile'])
@@ -559,25 +592,27 @@ module Camping
     
     private
       def extract_redirection_url
-        loc = @response.headers['Location']
-        path_seg = @response.headers['Location'].path.gsub(%r!/#{@class_name_abbr.downcase}!, '')
+        # We parse once more because Camping 2 sends a String (Rack does not want a URI) and 1.5 sends URI
+        loc = URI.parse(@response.headers['Location'].to_s)
+        path_seg = loc.path.gsub(%r!/#{@class_name_abbr.downcase}!, '')
         loc.query ? (path_seg + "?" + loc.query).to_s : path_seg.to_s
       end
       
-      def relativize_url!(url)
-        return unless url =~ /^([a-z]+):\//
-        p = URI.parse(url)
-        unless p.host == @request.domain
+      def relativize_url(url)
+        parsed = URI.parse(url)
+        if !parsed.scheme.blank? && parsed.host != @request.domain
           raise ::Mosquito::NonLocalRequest, 
-          "You tried to callout to #{p} which is outside of the test domain"
+            "You tried to callout to '#{parsed}' which is outside of the test domain (#{@request.domain})"
         end
-        url.replace(p.path + (p.query.blank ? '' : "?#{p.query}"))
+        # Now remove the path
+        parsed.path.gsub!(/^\/#{@class_name_abbr.downcase}\//, '/')
+        [parsed.path, parsed.query]
       end
   end
   
   # Used to test the models - no infrastructure will be created for running the request
   class ModelTest < Test
-    def test_dummy; end #:nodoc
+    def test_default; end #:nodoc
   end
   
   # Deprecated but humane

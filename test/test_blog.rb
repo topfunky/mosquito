@@ -1,3 +1,4 @@
+require File.dirname(__FILE__) + "/switcher"
 require File.dirname(__FILE__) + "/../lib/mosquito"
 require File.dirname(__FILE__) + "/../public/blog"
 Blog.create
@@ -19,7 +20,7 @@ class TestBlog < Camping::FunctionalTest
     end
   end
 
-  def test_cookies
+  def test_cookies_should_be_stored_and_loaded
     get '/cookies'
     assert_cookie 'awesome_cookie', 'camping for good'
     assert_equal @state.awesome_data, 'camping for good'
@@ -27,7 +28,7 @@ class TestBlog < Camping::FunctionalTest
     assert_equal @state.awesome_data, 'camping for good'
   end
 
-  def test_cookies_persisted_across_requests_and_escaping_properly_handled
+  def test_cookies_should_be_persisted_across_requests_with_proper_escaping
     @cookies["asgård"] = 'Wøbble'
     get '/cookies'
     assert_equal 'asgård=W%C3%B8bble', @request['HTTP_COOKIE'], "The cookie val shouldbe escaped"
@@ -39,27 +40,25 @@ class TestBlog < Camping::FunctionalTest
     assert_equal 'Wøbble', @cookies["asgård"]
   end
 
-  def test_index
+  def test_get_without_arguments_should_just_call_the_app_index
     get
     assert_response :success
-    assert_match_body %r!>blog<!
+    assert_match_body /Welcome to the blog/
     assert_not_equal @state.awesome_data, 'camping for good'
-    assert_kind_of Array, @assigns[:posts]
-    assert_kind_of Post, assigns[:posts].first
   end
 
-  def test_view
+  def test_calling_view_should_fetch_view
     get '/view/1'
     assert_response :success
     assert_match_body %r!The quick fox jumped over the lazy dog!
   end
 
-  def test_styles
-    get 'styles.css'
+  def test_calling_styles_should_give_us_the_CSS
+    get '/styles.css'
     assert_match_body %r!Utopia!
   end
 
-  def test_edit_should_require_login
+  def test_calling_edit_should_render_login
     get '/edit/1'
     assert_response :success
     assert_match_body 'login'
@@ -139,7 +138,7 @@ class TestBlog < Camping::FunctionalTest
     assert_equal 'Called put', @response.body
   end
 
-  def calling_with_an_absolute_url_should_relativize
+  def test_calling_with_an_absolute_url_should_relativize
     assert_equal 'test.host', @request.domain
     put 'http://test.host/blog/rest'
     assert_nothing_raised do
@@ -147,11 +146,21 @@ class TestBlog < Camping::FunctionalTest
     end
   end
 
+  def test_calling_with_an_absolute_url_and_querystring_should_relativize_and_pass_parameters
+    assert_equal 'test.host', @request.domain
+    get 'http://test.host/blog/rest?one=2&foo=bar'
+    assert_nothing_raised do
+      assert_equal 'Called get', @response.body
+    end
+    assert_equal({"one"=>'2', "foo"=>"bar"}, @assigns.input)
+  end
+
   def test_calling_with_an_absolute_url_outside_of_the_default_test_host_must_raise
     assert_equal 'test.host', @request.domain
-    assert_raise(Mosquito::NonLocalRequest) do
-      put 'http://yahoo.com/blog/rest'
+    non_local = assert_raise(Mosquito::NonLocalRequest) do
+      get 'http://yahoo.com/blog/rest'
     end
+    assert_equal "You tried to callout to 'http://yahoo.com/blog/rest' which is outside of the test domain (test.host)", non_local.message
   end
 
   def test_calling_with_an_absolute_url_outside_of_the_custom_test_host_must_raise

@@ -1,3 +1,4 @@
+require File.dirname(__FILE__) + "/switcher"
 require File.dirname(__FILE__) + "/../lib/mosquito"
 
 $KCODE = 'u'
@@ -38,6 +39,11 @@ class TestMockRequest < Test::Unit::TestCase
   def test_default_domain_and_port
     assert_equal 'test.host', @req.to_hash['SERVER_NAME']
     assert_equal 'test.host', @req.to_hash['HTTP_HOST']
+  end
+  
+  def test_headers_mirrors_to_hash
+    assert_respond_to @req, :headers
+    assert_equal @req.headers, @req.to_hash
   end
 
   def test_envars_translate_to_readers
@@ -206,9 +212,9 @@ class TestMockRequest < Test::Unit::TestCase
     ]
 
     ref_segments.each_with_index do | ref, idx |
-      if ref == String
+      if ref === String
         assert_equal ref, output[idx], "The segment #{idx} should be #{ref}"
-      elsif ref == Regexp
+      elsif ref === Regexp
         assert_match ref, output[idx], "The segment #{idx} should match #{ref}"
       end
     end    
@@ -240,10 +246,13 @@ class TestMockRequestWithRoundtrip < Test::Unit::TestCase
 
     assert_equal "john", @parsed_input["name"]
     assert_kind_of Hash, @parsed_input["somefile"]
-    assert_equal "somefile", @parsed_input["somefile"]["name"]
-    assert_equal "pic.jpg", @parsed_input["somefile"]["filename"]
-    assert_equal "image/jpeg", @parsed_input["somefile"]["type"]
-    assert_kind_of Tempfile, @parsed_input["somefile"]["tempfile"]
+
+    ef = @parsed_input["somefile"].with_indifferent_access
+    
+    assert_equal "somefile", ef["name"]
+    assert_equal "pic.jpg", ef["filename"]
+    assert_equal "image/jpeg", ef["type"]
+    assert_kind_of Tempfile, ef["tempfile"]
     
     
     @req.post_params = {:hello => "welcome", :name => "john", :arrayed => [1, 2, 3], :somefile => "instead" }
@@ -280,11 +289,28 @@ class TestMockRequestWithRoundtrip < Test::Unit::TestCase
     ref = {"name"=>"john", "hello"=>"welæcome", "data"=>{"values"=>["1", "2", "3"]}}
     assert_equal ref, @parsed_input, "Camping should have parsed our input like so"
   end
+  
+  
+  def test_to_rack_request
+    @req.post_params = {:hello => "welæcome", :name => "john", :data => {:values => [1,2,3] } }
+    rack_r = @req.to_rack_request
+    
+    assert_kind_of Hash, rack_r
+    assert_equal "http", rack_r['rack.url_scheme']
+    assert_kind_of StringIO, rack_r['rack.input']
+    assert_equal [0,1], rack_r['rack.version']
+    assert_equal '74', rack_r['CONTENT_LENGTH']
+  end
+  
   private
     def run_request!
       @req.body.rewind
       begin
-        Sniffer.run(@req.body, @req.to_hash)
+        if Sniffer.respond_to?(:call)
+          Sniffer.call(@req.to_rack_request) 
+        else
+          Sniffer.run(@req.body, @req.to_hash)
+        end
       rescue Sniffer::Controllers::ParamPeeker::Messenger => e
         @parsed_input = e.packet
       end

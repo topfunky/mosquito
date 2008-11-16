@@ -1,15 +1,19 @@
 #!/usr/bin/env ruby
 
-require 'rubygems'
-gem 'camping', '>=1.4'
-require 'camping'
-require 'camping/session'
+begin
+  if Camping.respond_to?(:call) # Camping 2
+    require 'camping/ar/session'
+  else
+    require 'camping/session'
+  end
+end
   
 Camping.goes :Blog
 
-require File.dirname(__FILE__) + '/blog/models'
-require File.dirname(__FILE__) + '/blog/views'
-require File.dirname(__FILE__) + '/blog/controllers'
+$:.unshift File.dirname(__FILE__)
+require 'blog/models'
+require 'blog/views'
+require 'blog/controllers'
 
 Blog::Models.schema do
     create_table :blog_posts, :force => true do |t|

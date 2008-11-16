@@ -1,3 +1,4 @@
+require File.dirname(__FILE__) + "/switcher"
 require File.dirname(__FILE__) + "/../lib/mosquito"
 require File.dirname(__FILE__) + "/../public/bare"
 
@@ -19,14 +20,14 @@ class TestBare < Camping::FunctionalTest
     assert_match_body %r!Charles!
   end
 
-  test "should get page with success" do
+  test "should get sample page with success" do
     get '/sample'
     assert_response :success
     assert_no_session
     assert_match_body %r!<p>A sample page</p>!
   end
 
-  def test_request_uri_preserves_query_vars
+  test "should place the passed query params in the querystring" do
     get '/sample', :somevar => 10
     assert_equal '/bare/sample?somevar=10', @request['REQUEST_URI']
   end
@@ -37,24 +38,37 @@ class TestBare < Camping::FunctionalTest
   end
 
   test "should return error" do
-    get '/error'
-    assert_response :error
+    if Camping.respond_to?(:call)
+      # Camping on Rack reraises the errors which are caught by Rack's exception displayer
+      assert_raise(RuntimeError) { get '/error' }
+    else
+      assert_nothing_raised { get '/error' }
+      assert_response :error
+    end
   end
 
   test "should return 404 error" do
     get '/error404'
     assert_response 404
   end
-
-  def test_assigning_verbatim_post_payload
+  
+  test "should be able to assign verbatim POST payload" do
     post '/sample', 'foo=bar&plain=flat'
     @request.body.rewind
     assert_equal 'foo=bar&plain=flat', @request.body.read
+    assert_equal( {"foo"=>"bar", "plain"=>"flat"}, @assigns.input)
   end
-
+  
   test "should redirect" do
     get '/redirect'
     assert_redirected_to '/faq'
+  end
+
+  test "should coerce Mab in response to a String" do
+    assert_nothing_raised { get '/non-existing-something-something' }
+    assert_nothing_raised do
+      assert_kind_of String,  @response.body
+    end
   end
 
   # test "should send file" do

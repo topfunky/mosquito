@@ -1,5 +1,4 @@
 #!/usr/local/bin/ruby -rubygems
-require 'camping'
 
 Camping.goes :Bare
 

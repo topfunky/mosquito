@@ -1,3 +1,4 @@
+require File.dirname(__FILE__) + "/switcher"
 require File.dirname(__FILE__) + "/../lib/mosquito"
 
 class TestMockUpload < Test::Unit::TestCase

@@ -17,6 +17,7 @@ module Blog::Views
   end
 
   def index
+    h1 "Welcome to the blog"
     if @posts.empty?
       p 'No posts found.'
       p { a 'Add', :href => R(Add) }
